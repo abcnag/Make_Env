@@ -1,0 +1,150 @@
+import numpy as np
+from google.colab.patches import cv2_imshow
+import cv2
+import matplotlib.pyplot as plt
+from PIL import Image
+from matplotlib import style
+import pickle
+import time
+
+size = 10
+episodes = 25000
+move_penalty = -1
+enemy_penalty = -300
+food_reward = 25
+epsilon = 0.9
+eps_decay = 0.9998
+batch = 3000
+#---#
+player_n = 1
+food_n = 2
+enemy_n = 3
+#---#
+start_q = None
+#---#
+alpha = 0.1
+gamma = 0.95
+#---#
+d = {
+    1 : (255,175,0),
+    2 : (0,255,0),
+    3 : (0,0,255)
+}
+
+class Blob:
+  def __init__(self):
+    self.x = np.random.randint(0,size)
+    self.y = np.random.randint(0,size)
+
+  def __str__(self):
+    return f'{self.x}, {self.y}'
+
+  def __sub__(self,other):
+    return (self.x-other.x , self.y-other.y)
+
+  def action(self,choise):
+    if choise == 0:
+      self.move(x=1,y=1) 
+    if choise == 1:
+      self.move(x=-1,y=-1) 
+    if choise == 2:
+      self.move(x=-1,y=1) 
+    if choise == 3:
+      self.move(x=1,y=-1) 
+  
+  def move(self,x=False,y=False):
+    if not x:
+      self.x += np.random.randint(-1,2)
+    else:
+      self.x += x
+    #---#
+    if self.x > size-1:
+      self.x = size-1
+    if self.x < 0 :
+      self.x = 0
+    #---#
+    if not y:
+      self.y += np.random.randint(-1,2)
+    else:
+      self.y += y
+    #---#
+    if self.y > size-1:
+      self.y = size-1
+    if self.y < 0 :
+      self.y = 0
+
+if start_q == None:
+  q_table = {}
+  for x1 in range(-size+1, size):
+    for x2 in range(-size+1, size):
+      for y1 in range(-size+1, size):
+        for y2 in range(-size+1, size):
+          q_table[((x1,y1),(x2,y2))] = [np.random.uniform(-5,0) for i in range(4)]
+else :
+  with open(start_q, 'rb') as f:
+    q_table = pickle.load(f)
+
+episode_rewards = []
+for episode in range(episodes):
+  player = Blob()
+  food = Blob()
+  enemy = Blob()
+  #---#
+  if episode % batch == 0:
+    print(f'on # {episode}, epsilon : {epsilon}')
+    print(f'{batch} ep mean {np.mean(episode_rewards[-batch:])}')
+    show = True
+  else:
+    shpw = False
+  #---#
+  episode_reward = 0
+  for i in range(200):
+    obs = (player-food, player-enemy)
+    if np.random.uniform(0,1) > epsilon:
+      action = np.argmax(q_table[obs])
+    else:
+      action = np.random.randint(0,4)
+    #---#
+    player.action(action)
+    #---#
+    if (player.x-enemy.x , player.y-enemy.y) == (0,0) :
+      reward = enemy_penalty
+    elif (player.x-enemy.x , player.y-enemy.y) == (0,0) :
+      reward = food_reward
+    else:
+      reward = move_penalty
+    #---#
+    new_obs = (player-food , player-enemy)
+    next_max = max(q_table[new_obs])
+    current_q = q_table[obs][action]
+    if reward == enemy_penalty:
+      new_q = enemy_penalty
+    elif reward == food_reward:
+      new_q = food_reward
+    else:
+      new_q = (1-alpha) * current_q + alpha * (reward + gamma * next_max)
+    #---#
+    q_table[obs][action] = new_q
+    #---#
+    if show:
+      env = np.zeros((size,size,3), dtype=np.uint8)
+      env[food.y][food.x] = d[food_n]
+      env[enemy.y][enemy.x] = d[enemy_n]
+      env[player.y][player.x] = d[player_n]
+      #---#
+      image = Image.fromarray(env,'RGB')
+      image = image.resize((300,300))
+      cv2_imshow(np.array(image))
+      if reward == food_reward or reward == enemy_penalty:
+        if cv2.waitKey(500)& 0xFF == ord('q'):
+          break
+      else:
+        if cv2.waitKey(500)& 0xFF == ord('q'):
+          break
+    #---#
+    episode_reward += reward
+    if reward == food_reward or reward == enemy_penalty:
+      break
+  #---#
+  episode_rewards.append(episode_reward)
+  epsilon *= eps_decay
